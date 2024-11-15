@@ -1,0 +1,24 @@
+[project]
+name = "sec-nport"
+description = "Fast and reliable parsing of financial instrument data from N-PORT filings."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "GNU"
+keywords = ["sec", "edgar", "nport", "python", "finance", "financial", "reports", "filings", "nport"]
+authors = [
+    {name = "dev-quanty", email = ""}
+]
+classifiers = [
+    "Development Status :: 1 - Planning",
+    "Programming Language :: Python :: 3.11"
+]
+dependencies = [
+    "httpx>=1.0.0",
+    "orjson>=3.10.0",
+    "stamina>=24.3.0",
+    "tqdm>=4.67.0",
+    "pydantic>=2.10.0",
+    "beautifulsoup4>=4.13.0",
+    "lxml>=5.3.0"
+]
+dynamic = ["version"]
