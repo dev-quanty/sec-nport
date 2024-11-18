@@ -1,7 +1,7 @@
 from typing import Optional
 from datetime import date
 from pydantic import BaseModel
-from nport.xmltools import find_element, child_text, optional_decimal_text, optional_decimal_value
+from nport.xmltools import child_text, child_value
 
 
 class Registrant(BaseModel):
