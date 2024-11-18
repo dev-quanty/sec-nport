@@ -4,11 +4,8 @@ from bs4 import Tag, BeautifulSoup
 
 
 __all__ = [
-    'find_element',
     'child_text',
-    'child_value',
-    'optional_decimal_text',
-    'optional_decimal_value'
+    'child_value'
 ]
 
 
@@ -21,10 +18,10 @@ def find_element(
     :return: An element
     """
     if isinstance(xml_tag_or_string, Tag):
-        return xml_tag_or_string.find(element_name)
+        return xml_tag_or_string.find(element_name, recursive=False)
     elif isinstance(xml_tag_or_string, str) and "<" in xml_tag_or_string:
         soup: BeautifulSoup = BeautifulSoup(xml_tag_or_string, features="xml")
-        return soup.find(element_name)
+        return soup.find(element_name, recursive=False)
 
 
 def child_text(parent: Tag, child: str) -> Optional[str]:
@@ -34,8 +31,8 @@ def child_text(parent: Tag, child: str) -> Optional[str]:
     :param child: The name of the child element
     :return: the text of the child element if it exists or None
     """
-    el = parent.find(child)
-    if el and el.text.strip() != "N/A":
+    el = parent.find(child, recursive=False)
+    if el and isinstance(el.text, str) and el.text.strip() not in ("N/A", "000000000", "XXXX"):
         return el.text.strip()
     return None
 
@@ -48,27 +45,9 @@ def child_value(parent: Tag, child: str, key: str = "value") -> Optional[str]:
     :param key: The key of the child element's attributes
     :return: the value of the child element attribute if it exists or None
     """
-    el = parent.find(child)
+    el = parent.find(child, recursive=False)
     if el:
         value = el.attrs.get(key)
-        if value.strip() != "N/A":
+        if isinstance(value, str) and value.strip() not in ("N/A", "000000000", "XXXX"):
             return value
-    return None
-
-
-def optional_decimal_text(parent: Tag, child: str) -> Optional[Decimal]:
-    text = child_text(parent, child)
-    if text:
-        if text == "N/A" or text == "XXXX":
-            return None
-        return Decimal(text)
-    return None
-
-
-def optional_decimal_value(parent: Tag, child: str, key: str = "value") -> Optional[Decimal]:
-    text = child_value(parent, child, key)
-    if text:
-        if text == "N/A" or text == "XXXX":
-            return None
-        return Decimal(text)
     return None
