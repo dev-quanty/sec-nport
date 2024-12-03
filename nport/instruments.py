@@ -2,13 +2,14 @@ from typing import Optional
 from datetime import date
 from decimal import Decimal
 from pydantic import BaseModel
+import pandas as pd
 from nport.xmltools import child_value, child_text
 
 
 class BaseInstrument(BaseModel):
     # Elements of C.1
     issuer: Optional[str]
-    lei: Optional[str]
+    issuer_lei: Optional[str]
     name: str
     cusip: Optional[str]
     isin: Optional[str]
@@ -52,10 +53,16 @@ class BaseInstrument(BaseModel):
     # Additional from A.3
     report_date: date
 
+    def __repr__(self):
+        return f"{self.name} [{self.issuer}]"
+
+    def __str__(self):
+        return self.__repr__()
+
     @classmethod
     def from_xml(cls, tag, report_date):
         issuer = child_text(tag, "name")
-        lei = child_text(tag, "lei")
+        issuer_lei = child_text(tag, "lei")
         name = child_text(tag, "title")
         cusip = child_text(tag, "cusip")
 
@@ -129,7 +136,7 @@ class BaseInstrument(BaseModel):
 
         return cls(
             issuer=issuer,
-            lei=lei,
+            issuer_lei=issuer_lei,
             name=name,
             cusip=cusip,
             isin=isin,
@@ -164,11 +171,38 @@ class BaseInstrument(BaseModel):
             report_date=report_date
         )
 
-    def __repr__(self):
-        return f"{self.name} [{self.issuer}]"
-
-    def __str__(self):
-        return self.__repr__()
+    def to_list(self):
+        return pd.Series(
+            [
+                self.name,
+                self.cusip,
+                self.isin,
+                self.ticker,
+                self.other_identifier,
+                self.other_identifier_name,
+                self.issuer,
+                self.issuer_description,
+                self.issuer_lei,
+                self.issuer_type,
+                self.issuer_country,
+                self.issuer_country_exposure,
+                self.asset_type,
+                self.asset_description,
+                self.payoff_profile,
+                self.currency,
+                self.balance,
+                self.value_local,
+                self.exchange_rate,
+                self.price,
+                self.fair_value_level
+            ],
+            index=[
+                "Name", "CUSIP", "ISIN", "Ticker", "OtherIdentifier", "OtherIdentifierName", "Issuer",
+                "IssuerDescription", "IssuerLEI", "IssuerType", "IssuerCountry", "IssuerCountryExposure",
+                "AssetType", "AssetTypeDescription", "PayoffProfile", "Currency", "Balance", "Value", "ExchangeRate",
+                "Price", "FairValueLevel"
+            ]
+        )
 
 
 class DebtSecurity(BaseInstrument):
@@ -283,14 +317,6 @@ class Derivative(BaseInstrument):
     derivative_type_description: Optional[str]
     counterparty_name: Optional[str]
     counterparty_lei: Optional[str]
-    # reference_issuer: Optional[str]
-    # reference_name: Optional[str]
-    # reference_currency: Optional[str]
-    # reference_cusip: Optional[str]
-    # reference_isin: Optional[str]
-    # reference_ticker: Optional[str]
-    # reference_other_identifier_name: Optional[str]
-    # reference_other_identifier: Optional[str]
 
 
     @classmethod
@@ -308,8 +334,19 @@ class Derivative(BaseInstrument):
 
             if forward_tag.find("payOffProf"):
                 derivative_type = "Forward"
-                payoff_profile = child_text(forward_tag, "payOffProf")
+                base.payoff_profile = child_text(forward_tag, "payOffProf")
+
+                reference_instrument_tag = forward_tag.find("descRefInstrmnt")
                 reference_instrument = None
+                if reference_instrument_tag:
+                    if reference_instrument_tag.find("indexBasketInfo"):
+                        reference_instrument = ReferenceIndex.from_xml(reference_instrument_tag.find("indexBasketInfo"))
+                    elif reference_instrument_tag.find("nestedDerivInfo"):
+                        reference_instrument = ReferenceDerivative.from_xml(
+                            reference_instrument_tag.find("nestedDerivInfo"))
+                    else:
+                        reference_instrument = ReferenceOther.from_xml(reference_instrument_tag.find("otherRefInst"))
+
                 maturity = child_text(forward_tag, "expDate")
                 notional = child_text(forward_tag, "notionalAmt")
                 derivative_currency = child_text(forward_tag, "curCd")
@@ -320,7 +357,6 @@ class Derivative(BaseInstrument):
                     derivative_type_description=derivative_type_description,
                     counterparty_name=counterparty_name,
                     counterparty_lei=counterparty_lei,
-                    payoff_profile=payoff_profile,
                     reference_instrument=reference_instrument,
                     maturity=maturity,
                     notional=notional,
@@ -353,8 +389,19 @@ class Derivative(BaseInstrument):
         elif derivative_tag.find("futrDeriv"):
             derivative_type = "Future"
             future_tag = derivative_tag.find("futrDeriv")
-            payoff_profile = child_text(future_tag, "payOffProf")
+            base.payoff_profile = child_text(future_tag, "payOffProf")
+
+            reference_instrument_tag = future_tag.find("descRefInstrmnt")
             reference_instrument = None
+            if reference_instrument_tag:
+                if reference_instrument_tag.find("indexBasketInfo"):
+                    reference_instrument = ReferenceIndex.from_xml(reference_instrument_tag.find("indexBasketInfo"))
+                elif reference_instrument_tag.find("nestedDerivInfo"):
+                    reference_instrument = ReferenceDerivative.from_xml(
+                        reference_instrument_tag.find("nestedDerivInfo"))
+                else:
+                    reference_instrument = ReferenceOther.from_xml(reference_instrument_tag.find("otherRefInst"))
+
             maturity = child_text(future_tag, "expDate")
             notional = child_text(future_tag, "notionalAmt")
             derivative_currency = child_text(future_tag, "curCd")
@@ -365,7 +412,6 @@ class Derivative(BaseInstrument):
                 derivative_type_description=derivative_type_description,
                 counterparty_name=counterparty_name,
                 counterparty_lei=counterparty_lei,
-                payoff_profile=payoff_profile,
                 reference_instrument=reference_instrument,
                 maturity=maturity,
                 notional=notional,
@@ -380,6 +426,17 @@ class Derivative(BaseInstrument):
                 derivative_type = "Swap"
                 swap_flag = child_text(swap_tag, "swapFlag") == "Y"
                 maturity = child_text(swap_tag, "terminationDt")
+
+                reference_instrument_tag = swap_tag.find("descRefInstrmnt")
+                reference_instrument = None
+                if reference_instrument_tag:
+                    if reference_instrument_tag.find("indexBasketInfo"):
+                        reference_instrument = ReferenceIndex.from_xml(reference_instrument_tag.find("indexBasketInfo"))
+                    elif reference_instrument_tag.find("nestedDerivInfo"):
+                        reference_instrument = ReferenceDerivative.from_xml(
+                            reference_instrument_tag.find("nestedDerivInfo"))
+                    else:
+                        reference_instrument = ReferenceOther.from_xml(reference_instrument_tag.find("otherRefInst"))
 
                 payment_index = None
                 payment_rate = None
@@ -434,7 +491,7 @@ class Derivative(BaseInstrument):
                     derivative_type_description=derivative_type_description,
                     counterparty_name=counterparty_name,
                     counterparty_lei=counterparty_lei,
-                    reference_instrument=None,
+                    reference_instrument=reference_instrument,
                     swap_flag=swap_flag,
                     maturity=maturity,
                     payment_type=payment_type,
@@ -486,7 +543,18 @@ class Derivative(BaseInstrument):
             )
             option_type = child_text(option_tag, "putOrCall")
             option_payoff = child_text(option_tag, "writtenOrPur")
+
+            reference_instrument_tag = option_tag.find("descRefInstrmnt")
             reference_instrument = None
+            if reference_instrument_tag:
+                if reference_instrument_tag.find("indexBasketInfo"):
+                    reference_instrument = ReferenceIndex.from_xml(reference_instrument_tag.find("indexBasketInfo"))
+                elif reference_instrument_tag.find("nestedDerivInfo"):
+                    reference_instrument = ReferenceDerivative.from_xml(
+                        reference_instrument_tag.find("nestedDerivInfo"))
+                else:
+                    reference_instrument = ReferenceOther.from_xml(reference_instrument_tag.find("otherRefInst"))
+
             shares = child_text(option_tag, "shareNo")
             notional = child_text(option_tag, "principalAmt")
             derivative_currency = child_text(option_tag, "curCd")
@@ -518,7 +586,17 @@ class Derivative(BaseInstrument):
             derivative_type = "Other"
             derivative_type_description = child_value(derivative_tag, "othDeriv", "othDesc")
             other_derivative_tag = derivative_tag.find("othDeriv")
+
+            reference_instrument_tag = other_derivative_tag.find("descRefInstrmnt")
             reference_instrument = None
+            if reference_instrument_tag:
+                if reference_instrument_tag.find("indexBasketInfo"):
+                    reference_instrument = ReferenceIndex.from_xml(reference_instrument_tag.find("indexBasketInfo"))
+                elif reference_instrument_tag.find("nestedDerivInfo"):
+                    reference_instrument = ReferenceDerivative.from_xml(reference_instrument_tag.find("nestedDerivInfo"))
+                else:
+                    reference_instrument = ReferenceOther.from_xml(reference_instrument_tag.find("otherRefInst"))
+
             maturity = child_text(other_derivative_tag, "terminationDt")
             notional_tag = other_derivative_tag.find("notionalAmts")
             notional = [el.attrs.get("amt") for el in notional_tag.find_all("notionalAmt")]
@@ -541,16 +619,15 @@ class Derivative(BaseInstrument):
 
 
 class ForwardFuture(Derivative):
-    payoff_profile: str
-    reference_instrument: Optional[str]
-    maturity: date
-    notional: Decimal
-    derivative_currency: str
-    unrealized_appreciation: Decimal
+    reference_instrument: Optional[object]
+    maturity: Optional[date]
+    notional: Optional[Decimal]
+    derivative_currency: Optional[str]
+    unrealized_appreciation: Optional[Decimal]
 
 
 class Swap(Derivative):
-    reference_instrument: Optional[str]
+    reference_instrument: Optional[object]
     swap_flag: bool
     maturity: date
     payment_type: str
@@ -571,22 +648,22 @@ class Swap(Derivative):
     upfront_receipts_currency: str
     notional: Decimal
     derivative_currency: str
-    unrealized_appreciation: Decimal
+    unrealized_appreciation: Optional[Decimal]
 
 
 class FXForwardOrSwap(Derivative):
-    currency_amount_sold: Decimal
-    currency_sold: str
-    currency_amount_purchased: Decimal
-    currency_purchased: str
-    settlement: date
-    unrealized_appreciation: Decimal
+    currency_amount_sold: Optional[Decimal]
+    currency_sold: Optional[str]
+    currency_amount_purchased: Optional[Decimal]
+    currency_purchased: Optional[str]
+    settlement: Optional[date]
+    unrealized_appreciation: Optional[Decimal]
 
 
 class Option(Derivative):
     option_type: str
     option_payoff: str
-    reference_instrument: Optional[str]
+    reference_instrument: Optional[object]
     shares: Optional[Decimal]
     notional: Optional[Decimal]
     derivative_currency: Optional[str]
@@ -594,20 +671,361 @@ class Option(Derivative):
     exercise_currency: str
     exercise_date: date
     delta: Optional[Decimal]
-    unrealized_appreciation: Decimal
+    unrealized_appreciation: Optional[Decimal]
 
 
 class OtherDerivative(Derivative):
-    reference_instrument: Optional[str]
+    reference_instrument: Optional[object]
     maturity: date
     notional: list[Decimal]
     notional_currency: list[str]
     delta: Optional[Decimal]
-    unrealized_appreciation: Decimal
+    unrealized_appreciation: Optional[Decimal]
 
 
 class ReferenceDerivative(BaseModel):
-    pass
+    derivative_type: str
+    derivative_type_description: Optional[str]
+    counterparty_name: Optional[str]
+    counterparty_lei: Optional[str]
+
+    @classmethod
+    def from_xml(cls, tag):
+        counterparty_tag = tag.find("counterparties")
+        counterparty_name = child_text(counterparty_tag, "counterpartyName")
+        counterparty_lei = child_text(counterparty_tag, "counterpartyLei")
+
+        derivative_type_description = None
+        if tag.find("fwdDeriv"):
+            forward_tag = tag.find("fwdDeriv")
+
+            if forward_tag.find("payOffProf"):
+                derivative_type = "Forward"
+                payoff_profile = child_text(forward_tag, "payOffProf")
+
+                reference_instrument_tag = forward_tag.find("descRefInstrmnt")
+                reference_instrument = None
+                if reference_instrument_tag:
+                    if reference_instrument_tag.find("indexBasketInfo"):
+                        reference_instrument = ReferenceIndex.from_xml(reference_instrument_tag.find("indexBasketInfo"))
+                    elif reference_instrument_tag.find("nestedDerivInfo"):
+                        reference_instrument = ReferenceDerivative.from_xml(reference_instrument_tag.find("nestedDerivInfo"))
+                    else:
+                        reference_instrument = ReferenceOther.from_xml(reference_instrument_tag.find("otherRefInst"))
+
+                maturity = child_text(forward_tag, "expDate")
+                notional = child_text(forward_tag, "notionalAmt")
+                derivative_currency = child_text(forward_tag, "curCd")
+                return ReferenceForwardFuture(
+                    derivative_type=derivative_type,
+                    derivative_type_description=derivative_type_description,
+                    counterparty_name=counterparty_name,
+                    counterparty_lei=counterparty_lei,
+                    payoff_profile=payoff_profile,
+                    reference_instrument=reference_instrument,
+                    maturity=maturity,
+                    notional=notional,
+                    derivative_currency=derivative_currency
+                )
+
+            else:
+                derivative_type = "FX Forward"
+                currency_amount_sold = child_text(forward_tag, "amtCurSold")
+                currency_sold = child_text(forward_tag, "curSold")
+                currency_amount_purchased = child_text(forward_tag, "amtCurPur")
+                currency_purchased = child_text(forward_tag, "curPur")
+                settlement = child_text(forward_tag, "settlementDt")
+                return ReferenceFXForwardOrSwap(
+                    derivative_type=derivative_type,
+                    derivative_type_description=derivative_type_description,
+                    counterparty_name=counterparty_name,
+                    counterparty_lei=counterparty_lei,
+                    currency_amount_sold=currency_amount_sold,
+                    currency_sold=currency_sold,
+                    currency_amount_purchased=currency_amount_purchased,
+                    currency_purchased=currency_purchased,
+                    settlement=settlement
+                )
+
+        elif tag.find("futrDeriv"):
+            derivative_type = "Future"
+            future_tag = tag.find("futrDeriv")
+            payoff_profile = child_text(future_tag, "payOffProf")
+
+            reference_instrument_tag = future_tag.find("descRefInstrmnt")
+            reference_instrument = None
+            if reference_instrument_tag:
+                if reference_instrument_tag.find("indexBasketInfo"):
+                    reference_instrument = ReferenceIndex.from_xml(reference_instrument_tag.find("indexBasketInfo"))
+                elif reference_instrument_tag.find("nestedDerivInfo"):
+                    reference_instrument = ReferenceDerivative.from_xml(
+                        reference_instrument_tag.find("nestedDerivInfo"))
+                else:
+                    reference_instrument = ReferenceOther.from_xml(reference_instrument_tag.find("otherRefInst"))
+
+            maturity = child_text(future_tag, "expDate")
+            notional = child_text(future_tag, "notionalAmt")
+            derivative_currency = child_text(future_tag, "curCd")
+            return ReferenceForwardFuture(
+                derivative_type=derivative_type,
+                derivative_type_description=derivative_type_description,
+                counterparty_name=counterparty_name,
+                counterparty_lei=counterparty_lei,
+                payoff_profile=payoff_profile,
+                reference_instrument=reference_instrument,
+                maturity=maturity,
+                notional=notional,
+                derivative_currency=derivative_currency
+            )
+
+        elif tag.find("swapDeriv"):
+            swap_tag = tag.find("swapDeriv")
+
+            if tag.find("swapFlag"):
+                derivative_type = "Swap"
+                swap_flag = child_text(swap_tag, "swapFlag") == "Y"
+                maturity = child_text(swap_tag, "terminationDt")
+
+                reference_instrument_tag = swap_tag.find("descRefInstrmnt")
+                reference_instrument = None
+                if reference_instrument_tag:
+                    if reference_instrument_tag.find("indexBasketInfo"):
+                        reference_instrument = ReferenceIndex.from_xml(reference_instrument_tag.find("indexBasketInfo"))
+                    elif reference_instrument_tag.find("nestedDerivInfo"):
+                        reference_instrument = ReferenceDerivative.from_xml(
+                            reference_instrument_tag.find("nestedDerivInfo"))
+                    else:
+                        reference_instrument = ReferenceOther.from_xml(reference_instrument_tag.find("otherRefInst"))
+
+                payment_index = None
+                payment_rate = None
+                payment_description = None
+                payment_currency = None
+                payment_amount = None
+                if swap_tag.find("fixedPmntDesc"):
+                    payment_type = child_value(swap_tag, "fixedPmntDesc", "fixedOrFloating")
+                    payment_rate = child_value(swap_tag, "fixedPmntDesc", "fixedRt")
+                    payment_currency = child_value(swap_tag, "fixedPmntDesc", "curCd")
+                    payment_amount = child_value(swap_tag, "fixedPmntDesc", "amount")
+                elif swap_tag.find("floatingPmntDesc"):
+                    payment_type = child_value(swap_tag, "floatingPmntDesc", "fixedOrFloating")
+                    payment_rate = child_value(swap_tag, "floatingPmntDesc", "floatingRtSpread")
+                    payment_index = child_value(swap_tag, "floatingPmntDesc", "floatingRtIndex")
+                    payment_currency = child_value(swap_tag, "floatingPmntDesc", "curCd")
+                    payment_amount = child_value(swap_tag, "floatingPmntDesc", "pmntAmt")
+                elif swap_tag.find("otherPmntDesc"):
+                    payment_type = child_value(swap_tag, "otherPmntDesc", "fixedOrFloating")
+                    payment_description = child_text(swap_tag, "otherPmntDesc")
+
+                receipt_index = None
+                receipt_rate = None
+                receipt_description = None
+                receipt_currency = None
+                receipt_amount = None
+                if swap_tag.find("fixedRecDesc"):
+                    receipt_type = child_value(swap_tag, "fixedRecDesc", "fixedOrFloating")
+                    receipt_rate = child_value(swap_tag, "fixedRecDesc", "fixedRt")
+                    receipt_currency = child_value(swap_tag, "fixedRecDesc", "curCd")
+                    receipt_amount = child_value(swap_tag, "fixedRecDesc", "amount")
+                elif swap_tag.find("floatingRecDesc"):
+                    receipt_type = child_value(swap_tag, "floatingRecDesc", "fixedOrFloating")
+                    receipt_rate = child_value(swap_tag, "floatingRecDesc", "floatingRtSpread")
+                    receipt_index = child_value(swap_tag, "floatingRecDesc", "floatingRtIndex")
+                    receipt_currency = child_value(swap_tag, "floatingRecDesc", "curCd")
+                    receipt_amount = child_value(swap_tag, "floatingRecDesc", "pmntAmt")
+                elif swap_tag.find("otherRecDesc"):
+                    receipt_type = child_value(swap_tag, "otherRecDesc", "fixedOrFloating")
+                    receipt_description = child_text(swap_tag, "otherRecDesc")
+
+                upfront_payment = child_text(swap_tag, "upfrontPmnt")
+                upfront_payment_currency = child_text(swap_tag, "pmntCurCd")
+                upfront_receipts = child_text(swap_tag, "upfrontRcpt")
+                upfront_receipts_currency = child_text(swap_tag, "rcptCurCd")
+                notional = child_text(swap_tag, "notionalAmt")
+                derivative_currency = child_text(swap_tag, "curCd")
+                return ReferenceSwap(
+                    derivative_type=derivative_type,
+                    derivative_type_description=derivative_type_description,
+                    counterparty_name=counterparty_name,
+                    counterparty_lei=counterparty_lei,
+                    reference_instrument=reference_instrument,
+                    swap_flag=swap_flag,
+                    maturity=maturity,
+                    payment_type=payment_type,
+                    payment_description=payment_description,
+                    payment_rate=payment_rate,
+                    payment_index=payment_index,
+                    payment_currency=payment_currency,
+                    payment_amount=payment_amount,
+                    receipt_type=receipt_type,
+                    receipt_description=receipt_description,
+                    receipt_rate=receipt_rate,
+                    receipt_index=receipt_index,
+                    receipt_currency=receipt_currency,
+                    receipt_amount=receipt_amount,
+                    upfront_payment=upfront_payment,
+                    upfront_payment_currency=upfront_payment_currency,
+                    upfront_receipts=upfront_receipts,
+                    upfront_receipts_currency=upfront_receipts_currency,
+                    notional=notional,
+                    derivative_currency=derivative_currency
+                )
+            else:
+                derivative_type = "FX Swap"
+                currency_amount_sold = child_text(swap_tag, "amtCurSold")
+                currency_sold = child_text(swap_tag, "curSold")
+                currency_amount_purchased = child_text(swap_tag, "amtCurPur")
+                currency_purchased = child_text(swap_tag, "curPur")
+                settlement = child_text(swap_tag, "settlementDt")
+                return ReferenceFXForwardOrSwap(
+                    derivative_type=derivative_type,
+                    derivative_type_description=derivative_type_description,
+                    counterparty_name=counterparty_name,
+                    counterparty_lei=counterparty_lei,
+                    currency_amount_sold=currency_amount_sold,
+                    currency_sold=currency_sold,
+                    currency_amount_purchased=currency_amount_purchased,
+                    currency_purchased=currency_purchased,
+                    settlement=settlement
+                )
+
+        elif tag.find("optionSwaptionWarrantDeriv"):
+            option_tag = tag.find("optionSwaptionWarrantDeriv")
+            derivative_type = {"OPT": "Option", "SWO": "Swaption", "WAR": "Warrant"}.get(
+                child_value(tag, "optionSwaptionWarrantDeriv", "derivCat")
+            )
+            option_type = child_text(option_tag, "putOrCall")
+            option_payoff = child_text(option_tag, "writtenOrPur")
+
+            reference_instrument_tag = option_tag.find("descRefInstrmnt")
+            reference_instrument = None
+            if reference_instrument_tag:
+                if reference_instrument_tag.find("indexBasketInfo"):
+                    reference_instrument = ReferenceIndex.from_xml(reference_instrument_tag.find("indexBasketInfo"))
+                elif reference_instrument_tag.find("nestedDerivInfo"):
+                    reference_instrument = ReferenceDerivative.from_xml(
+                        reference_instrument_tag.find("nestedDerivInfo"))
+                else:
+                    reference_instrument = ReferenceOther.from_xml(reference_instrument_tag.find("otherRefInst"))
+
+            shares = child_text(option_tag, "shareNo")
+            notional = child_text(option_tag, "principalAmt")
+            derivative_currency = child_text(option_tag, "curCd")
+            exercise_price = child_text(option_tag, "exercisePrice")
+            exercise_currency = child_text(option_tag, "exercisePriceCurCd")
+            exercise_date = child_text(option_tag, "expDt")
+            delta = child_text(option_tag, "delta")
+            return ReferenceOption(
+                derivative_type=derivative_type,
+                derivative_type_description=derivative_type_description,
+                counterparty_name=counterparty_name,
+                counterparty_lei=counterparty_lei,
+                option_type=option_type,
+                option_payoff=option_payoff,
+                reference_instrument=reference_instrument,
+                shares=shares,
+                notional=notional,
+                derivative_currency=derivative_currency,
+                exercise_price=exercise_price,
+                exercise_currency=exercise_currency,
+                exercise_date=exercise_date,
+                delta=delta
+            )
+
+        elif tag.find("othDeriv"):
+            derivative_type = "Other"
+            derivative_type_description = child_value(tag, "othDeriv", "othDesc")
+            other_derivative_tag = tag.find("othDeriv")
+
+            reference_instrument_tag = other_derivative_tag.find("descRefInstrmnt")
+            reference_instrument = None
+            if reference_instrument_tag:
+                if reference_instrument_tag.find("indexBasketInfo"):
+                    reference_instrument = ReferenceIndex.from_xml(reference_instrument_tag.find("indexBasketInfo"))
+                elif reference_instrument_tag.find("nestedDerivInfo"):
+                    reference_instrument = ReferenceDerivative.from_xml(
+                        reference_instrument_tag.find("nestedDerivInfo"))
+                else:
+                    reference_instrument = ReferenceOther.from_xml(reference_instrument_tag.find("otherRefInst"))
+
+            maturity = child_text(other_derivative_tag, "terminationDt")
+            notional_tag = other_derivative_tag.find("notionalAmts")
+            notional = [el.attrs.get("amt") for el in notional_tag.find_all("notionalAmt")]
+            notional_currency = [el.attrs.get("curCd") for el in notional_tag.find_all("notionalAmt")]
+            delta = child_text(other_derivative_tag, "delta")
+            return ReferenceOtherDerivative(
+                derivative_type=derivative_type,
+                derivative_type_description=derivative_type_description,
+                counterparty_name=counterparty_name,
+                counterparty_lei=counterparty_lei,
+                reference_instrument=reference_instrument,
+                maturity=maturity,
+                notional=notional,
+                notional_currency=notional_currency,
+                delta=delta,
+                unrealized_appreciation=None
+            )
+
+
+class ReferenceForwardFuture(ReferenceDerivative):
+    derivativepayoff_profile: Optional[str]
+    reference_instrument: Optional[object]
+    maturity: Optional[date]
+    notional: Optional[Decimal]
+    derivative_currency: Optional[str]
+
+
+class ReferenceSwap(ReferenceDerivative):
+    reference_instrument: Optional[object]
+    swap_flag: bool
+    maturity: date
+    payment_type: str
+    payment_description: Optional[str]
+    payment_rate: Optional[Decimal]
+    payment_index: Optional[str]
+    payment_currency: Optional[str]
+    payment_amount: Optional[Decimal]
+    receipt_type: str
+    receipt_description: Optional[str]
+    receipt_rate: Optional[Decimal]
+    receipt_index: Optional[str]
+    receipt_currency: Optional[str]
+    receipt_amount: Optional[Decimal]
+    upfront_payment: Decimal
+    upfront_payment_currency: str
+    upfront_receipts: Decimal
+    upfront_receipts_currency: str
+    notional: Decimal
+    derivative_currency: str
+
+
+class ReferenceFXForwardOrSwap(ReferenceDerivative):
+    currency_amount_sold: Optional[Decimal]
+    currency_sold: Optional[str]
+    currency_amount_purchased: Optional[Decimal]
+    currency_purchased: Optional[str]
+    settlement: Optional[date]
+
+
+class ReferenceOption(ReferenceDerivative):
+    option_type: str
+    option_payoff: str
+    reference_instrument: Optional[object]
+    shares: Optional[Decimal]
+    notional: Optional[Decimal]
+    derivative_currency: Optional[str]
+    exercise_price: Decimal
+    exercise_currency: str
+    exercise_date: date
+    delta: Optional[Decimal]
+
+
+class ReferenceOtherDerivative(ReferenceDerivative):
+    reference_instrument: Optional[object]
+    maturity: date
+    notional: list[Decimal]
+    notional_currency: list[str]
+    delta: Optional[Decimal]
 
 
 class ReferenceIndexComponents(BaseModel):
@@ -652,8 +1070,8 @@ class ReferenceIndexComponents(BaseModel):
 
 
 class ReferenceIndex(BaseModel):
-    name: str
-    identifier: str
+    name: Optional[str]
+    identifier: Optional[str]
     description: Optional[str]
     components: Optional[list[ReferenceIndexComponents]]
 
@@ -671,4 +1089,34 @@ class ReferenceIndex(BaseModel):
             identifier=identifier,
             description=description,
             components=components
+        )
+
+
+class ReferenceOther(BaseModel):
+    issuer: Optional[str]
+    name: Optional[str]
+    cusip: Optional[str]
+    isin: Optional[str]
+    ticker: Optional[str]
+    other_identifier_name: Optional[str]
+    other_identifier: Optional[str]
+
+    @classmethod
+    def from_xml(cls, tag):
+        issuer = child_text(tag, "issuerName")
+        name = child_text(tag, "issueTitle")
+        identifier_tag = tag.find("identifiers")
+        cusip = child_text(identifier_tag, "cusip")
+        isin = child_text(identifier_tag, "isin")
+        ticker = child_text(identifier_tag, "ticker")
+        other_identifier_name = child_value(identifier_tag, "other", "otherDesc")
+        other_identifier = child_value(identifier_tag, "other")
+        return cls(
+            issuer=issuer,
+            name=name,
+            cusip=cusip,
+            isin=isin,
+            ticker=ticker,
+            other_identifier_name=other_identifier_name,
+            other_identifier=other_identifier
         )
