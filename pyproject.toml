@@ -1,0 +1,49 @@
+[project]
+name = "sec-nport"
+description = "Fast and reliable parsing of financial instrument data from N-PORT filings."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+keywords = ["sec", "edgar", "nport", "python", "finance", "financial", "reports", "filings", "nport"]
+authors = [
+    {name = "dev-quanty", email = ""}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13"
+]
+dependencies = [
+    "httpx>=1.0.0",
+    "orjson>=3.10.0",
+    "stamina>=24.3.0",
+    "tqdm>=4.67.0",
+    "pydantic>=2.10.0",
+    "beautifulsoup4>=4.13.0",
+    "lxml>=5.3.0",
+    "pandas>=2.2.3",
+    "xmlschema>=3.4.3"
+]
+dynamic = ["version"]
+
+[project.urls]
+Repository = "https://github.com/dev-quanty/sec-nport.git"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "nport/__about__.py"
+
+[tool.hatch.build]
+include = [
+  "nport/**/*.py",
+  "schema/*/*.xsd",
+  "LICENSE.txt"
+]
+artifacts = [
+  "LICENSE.txt"  # And this line
+]
