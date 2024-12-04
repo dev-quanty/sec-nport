@@ -16,7 +16,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13"
 ]
 dependencies = [
-    "httpx>=1.0.0",
+    "httpx>=0.28.0",
     "orjson>=3.10.0",
     "stamina>=24.3.0",
     "tqdm>=4.67.0",
