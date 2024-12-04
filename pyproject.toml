@@ -21,7 +21,7 @@ dependencies = [
     "stamina>=24.3.0",
     "tqdm>=4.67.0",
     "pydantic>=2.10.0",
-    "beautifulsoup4>=4.13.0",
+    "beautifulsoup4>=4.12.3",
     "lxml>=5.3.0",
     "pandas>=2.2.3",
     "xmlschema>=3.4.3"
@@ -45,5 +45,5 @@ include = [
   "LICENSE.txt"
 ]
 artifacts = [
-  "LICENSE.txt"  # And this line
+  "LICENSE.txt"
 ]
