@@ -1,10 +1,13 @@
 from typing import Optional
 from datetime import date
 from pydantic import BaseModel
-from nport.xmltools import child_text, child_value
+from nport._xmltools import child_text, child_value
 
 
 class Registrant(BaseModel):
+    """
+    Details for the registrant of the filing
+    """
     # Elements of A.1
     name: str
     file_number: str
@@ -36,6 +39,9 @@ class Registrant(BaseModel):
 
     @classmethod
     def from_xml(cls, tag):
+        """
+        Get registrant details from filing
+        """
         name = child_text(tag, "regName")
         file_number = child_text(tag, "regFileNumber")
         cik = child_text(tag, "regCik")
@@ -78,6 +84,9 @@ class Registrant(BaseModel):
 
 
 class PortfolioInterestRisk(BaseModel):
+    """
+    Interest rate risk of the fund for 1bps and 100bps moves
+    """
     # Elements of B.3.a and B.3.b
     currency: str
     dv01_3m: float
@@ -93,6 +102,9 @@ class PortfolioInterestRisk(BaseModel):
 
     @classmethod
     def from_xml(cls, tag):
+        """
+        Get interest rate risk details from filing
+        """
         currency = child_text(tag, "curCd")
         dv01_3m = child_value(tag, "intrstRtRiskdv01", "period3Mon")
         dv01_1y = child_value(tag, "intrstRtRiskdv01", "period1Yr")
@@ -121,6 +133,9 @@ class PortfolioInterestRisk(BaseModel):
 
 
 class PortfolioCreditRisk(BaseModel):
+    """
+    Credit risk of the fund for 1bps moves in IG and Non-IG spreads
+    """
     # Elements of B.3.c
     cs01_3m_ig: float
     cs01_1y_ig: float
@@ -135,6 +150,9 @@ class PortfolioCreditRisk(BaseModel):
 
     @classmethod
     def from_xml(cls, tag):
+        """
+        Get credit risk details from filing
+        """
         cs01_3m_ig = child_value(tag, "creditSprdRiskInvstGrade", "period3Mon")
         cs01_1y_ig = child_value(tag, "creditSprdRiskInvstGrade", "period1Yr")
         cs01_5y_ig = child_value(tag, "creditSprdRiskInvstGrade", "period5Yr")
@@ -161,6 +179,9 @@ class PortfolioCreditRisk(BaseModel):
 
 
 class Borrower(BaseModel):
+    """
+    Borrower details
+    """
     # Elements of B.4.a
     name: str
     lei: Optional[str]
@@ -168,6 +189,9 @@ class Borrower(BaseModel):
 
 
 class NonCashCollateral(BaseModel):
+    """
+    Non-Cash Collateral details
+    """
     # Elements of B.4.b
     aggregate_principal: float
     aggregate_value: float
@@ -175,6 +199,9 @@ class NonCashCollateral(BaseModel):
 
 
 class ClassReturn(BaseModel):
+    """
+    Fund return metrics for the past three months
+    """
     # Elements of B.5.a
     return_month1: float
     return_month2: float
@@ -183,6 +210,9 @@ class ClassReturn(BaseModel):
 
 
 class Fund(BaseModel):
+    """
+    Details for the fund of the filing
+    """
     # Elements of B.1
     total_assets: float
     total_liabilities: float
@@ -224,6 +254,9 @@ class Fund(BaseModel):
 
     @classmethod
     def from_xml(cls, tag):
+        """
+        Get fund details from filing
+        """
         total_assets = child_text(tag, "totAssets")
         total_liabilities = child_text(tag, "totLiabs")
         net_assets = child_text(tag, "netAssets")

@@ -1,17 +1,22 @@
 import os.path
+from pathlib import Path
 
 from pydantic import BaseModel
 from bs4 import BeautifulSoup
 import pandas as pd
 import xmlschema
+
 from nport.fund import Registrant, Fund
 from nport.instruments import BaseInstrument, DebtSecurity, Derivative
 
 
-PATH, _ = os.path.split(__file__)
+BASE_DIR, _ = os.path.split(__file__)
 
 
 class NPORT(BaseModel):
+    """
+    Class of a NPORT-P Filing
+    """
     registrant: Registrant
     fund: Fund
     securities: list[BaseInstrument | DebtSecurity | Derivative]
@@ -23,13 +28,28 @@ class NPORT(BaseModel):
         return self.__repr__()
 
     @classmethod
-    def from_file(cls, path: str, **kwargs):
-        with open(path, "r") as file:
+    def from_file(cls, path: str | Path, validate: bool = True, **kwargs):
+        """
+        Create NPORT class object from path to filing
+
+        Args:
+            path (str or Path):
+                Path to the filing
+            validate (bool, optional):
+                If true, the file is validated with the XML schema definition. Defaults to true.
+            **kwargs:
+                Additional arguments to hand over to the open function
+
+        Returns:
+            NPORT: NPORT class object
+        """
+        with open(path, "r", **kwargs) as file:
             xml = file.read()
 
-        validate = kwargs.get("validate", True)
         if validate:
-            schema = xmlschema.XMLSchema(os.path.join(PATH, "..", "schema", "nport", "eis_NPORT_Filer.xsd"))
+            schema = xmlschema.XMLSchema(
+                os.path.join(BASE_DIR, "..", "schema", "nport", "eis_NPORT_Filer.xsd")
+            )
             try:
                 xmlschema.validate(xml, schema)
             except xmlschema.XMLSchemaDecodeError:
@@ -39,10 +59,23 @@ class NPORT(BaseModel):
         return cls.from_xml(root)
 
     @classmethod
-    def from_str(cls, xml: str, **kwargs):
-        validate = kwargs.get("validate", True)
+    def from_str(cls, xml: str, validate: bool = True):
+        """
+        Create NPORT class object from filings text
+
+        Args:
+            xml (str):
+                Text of the filing
+            validate (bool, optional):
+                If true, the file is validated with the XML schema definition. Defaults to true.
+
+        Returns:
+            NPORT: NPORT class object
+        """
         if validate:
-            schema = xmlschema.XMLSchema(os.path.join(PATH, "..", "schema", "nport", "eis_NPORT_Filer.xsd"))
+            schema = xmlschema.XMLSchema(
+                os.path.join(BASE_DIR, "..", "schema", "nport", "eis_NPORT_Filer.xsd")
+            )
             try:
                 xmlschema.validate(xml, schema)
             except xmlschema.XMLSchemaDecodeError:
@@ -52,7 +85,16 @@ class NPORT(BaseModel):
         return cls.from_xml(root)
 
     @classmethod
-    def from_xml(cls, root):
+    def from_xml(cls, root: BeautifulSoup):
+        """
+        Create NPORT class object from the XML root tag
+
+        Args:
+            root (BeautifulSoup): Root of the filing
+
+        Returns:
+            NPORT: NPORT class object
+        """
         form_tag = root.find("formData")
 
         registrant_tag = form_tag.find("genInfo")
@@ -78,5 +120,8 @@ class NPORT(BaseModel):
         )
 
     def export_prices(self):
+        """
+        Compile the identifiers and prices for all instruments listed in the report
+        """
         price_list = [security.to_list() for security in self.securities]
         return pd.DataFrame(price_list)

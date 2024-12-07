@@ -1,16 +1,15 @@
 from typing import Optional, Union
-from decimal import Decimal
 from bs4 import Tag, BeautifulSoup
 
 
 __all__ = [
-    'child_text',
-    'child_value'
+    "child_text",
+    "child_value"
 ]
 
 
 def find_element(
-        xml_tag_or_string: Union[str, BeautifulSoup, Tag], element_name) -> Tag:
+        xml_tag_or_string: Union[str, BeautifulSoup, Tag], element_name) -> Tag | None:
     """
     Find the element with that name in the string or Tag
     :param xml_tag_or_string: either an exml tag or string containing xml
@@ -18,10 +17,13 @@ def find_element(
     :return: An element
     """
     if isinstance(xml_tag_or_string, Tag):
-        return xml_tag_or_string.find(element_name, recursive=False)
-    elif isinstance(xml_tag_or_string, str) and "<" in xml_tag_or_string:
+        tag = xml_tag_or_string.find(element_name, recursive=False)
+        return tag
+    if isinstance(xml_tag_or_string, str) and "<" in xml_tag_or_string:
         soup: BeautifulSoup = BeautifulSoup(xml_tag_or_string, features="xml")
-        return soup.find(element_name, recursive=False)
+        tag = soup.find(element_name, recursive=False)
+        return tag
+    return None
 
 
 def child_text(parent: Tag, child: str) -> Optional[str]:
