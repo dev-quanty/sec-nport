@@ -152,7 +152,7 @@ the SEC has filings.
     e.g. filings = get_filings(2023) OR
          filings = get_filings(2023, 1)
 
-(You specified the year {year} and quarter {quarter})   
+(You specified the year {year} and quarter {quarter})
         """)
         return None
     filings = get_filings_for_quarters(year_and_quarters, index=index)

@@ -39,4 +39,4 @@ jobs:
     - name: Run package unit tests
       run: hatch run test
     - name: Analysing the code with pylint
-      run: pylint $(git ls-files 'nport/*.py')
+      run: pylint $(git ls-files 'nport/*.py') --fail-under=9.0
