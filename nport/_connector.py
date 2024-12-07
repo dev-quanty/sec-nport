@@ -14,9 +14,10 @@ import orjson as json
 from stamina import retry
 from tqdm import tqdm
 
-__all__ = ["get_with_retry", "get_with_retry_async", "stream_with_retry", "post_with_retry", "post_with_retry_async",
-           "download_file", "download_file_async", "download_json", "download_json_async", "stream_file",
-           "download_text", "download_text_between_tags", "download_bulk_data", "download_datafile"]
+__all__ = ["get_with_retry", "get_with_retry_async", "stream_with_retry", "post_with_retry",
+           "post_with_retry_async", "download_file", "download_file_async", "download_json",
+           "download_json_async", "stream_file", "download_text", "download_text_between_tags",
+           "download_bulk_data", "download_datafile"]
 
 attempts = 6
 retry_timeout = 40
@@ -26,13 +27,16 @@ http_timeout = 20
 max_connections = 5
 text_extensions = (".txt", ".htm", ".html", ".xsd", ".xml", "XML", ".json", ".idx", ".paper")
 
-default_local_data_dir = Path(os.path.join(os.path.expanduser("~"), ".edgar"))
-edgar_data_dir = Path(os.getenv('EDGAR_LOCAL_DATA_DIR', default_local_data_dir))
+default_local_data_dir = os.path.join(os.path.expanduser("~"), ".edgar")
+edgar_data_dir = Path(os.getenv("EDGAR_LOCAL_DATA_DIR", default_local_data_dir))
 if not edgar_data_dir.exists():
     os.makedirs(edgar_data_dir)
 
 
 class TooManyRequestsError(Exception):
+    """
+    Exception for hitting the SEC rate limit
+    """
     def __init__(self, url, message="Too Many Requests"):
         self.url = url
         self.message = message
@@ -40,12 +44,15 @@ class TooManyRequestsError(Exception):
 
 
 class IdentityNotSetException(Exception):
-    pass
+    """
+    Exception for missing identity authentication
+    """
 
 
 class RequestRate:
     """
-    A simple class to represent a request rate, i.e., the maximum number of requests for a given time window
+    A simple class to represent a request rate, i.e.,
+    the maximum number of requests for a given time window
     """
 
     def __init__(self, max_requests: int, time_window: int):
@@ -73,6 +80,9 @@ class Throttler:
         self.peak_call_rate: float = 0.0
 
     def get_ticket(self):
+        """
+        Threadsafe method to get ticket
+        """
         with self.lock:
             current_time = time.monotonic()
 
@@ -84,27 +94,38 @@ class Throttler:
             if len(self.request_timestamps) < self.request_rate.max_requests:
                 self.request_timestamps.append(current_time)
                 return True
-            else:
-                return False
+            return False
 
     def wait_for_ticket(self):
+        """
+        Wait for ticket adhering to rate limit
+        """
         while not self.get_ticket():
             time.sleep(self.sleep_interval)
 
     def update_metrics(self):
+        """
+        Update the output metrics
+        """
         self.total_calls += 1
         current_call_rate: float = len(self.request_timestamps) / self.request_rate.time_window
         self.peak_call_rate = max(self.peak_call_rate, current_call_rate)
 
     def get_metrics(self):
+        """
+        Return output metrics for throttler
+        """
         return {
-            "decorated_functions": self.decorated_functions,  # Now it's a list
+            "decorated_functions": self.decorated_functions,
             "total_calls": self.total_calls,
             "peak_call_rate": self.peak_call_rate,
             "request_rate_limit": self.request_rate.max_requests,
         }
 
     def print_metrics(self):
+        """
+        Print output metrics for throttler
+        """
         metrics = self.get_metrics()
         print(f"Metrics for decorated functions: {', '.join(metrics['decorated_functions'])}")
         print(f"Total calls: {metrics['total_calls']}")
@@ -150,12 +171,21 @@ def throttle_requests(request_rate=None, requests_per_second=None, **kwargs):
 
 
 def is_redirect(response):
+    """
+    Check if response status code is redirect
+    """
     return response.status_code in [301, 302]
 
 
 def with_identity(func):
+    """
+    Check if function is used with identity authentication
+    """
     @wraps(func)
-    def wrapper(url, identity=None, identity_callable=None, *args, **kwargs):
+    def wrapper(url, *args, identity=None, identity_callable=None, **kwargs):
+        """
+        Identity Wrapper
+        """
         if identity is None:
             if identity_callable is not None:
                 identity = identity_callable()
@@ -181,10 +211,14 @@ def get_with_retry(url, identity=None, identity_callable=None, **kwargs):
     Sends a GET request with retry functionality and identity handling.
 
     Args:
-        url (str): The URL to send the GET request to.
-        identity (str, optional): The identity to use for the request. Defaults to None.
-        identity_callable (callable, optional): A callable that returns the identity. Defaults to None.
-        **kwargs: Additional keyword arguments to pass to the underlying httpx.Client.get() method.
+        url (str):
+            The URL to send the GET request to.
+        identity (str, optional):
+            The identity to use for the request. Defaults to None.
+        identity_callable (callable, optional):
+            A callable that returns the identity. Defaults to None.
+        **kwargs:
+            Additional keyword arguments to pass to the underlying httpx.Client.get() method.
 
     Returns:
         httpx.Response: The response object returned by the GET request.
@@ -196,9 +230,13 @@ def get_with_retry(url, identity=None, identity_callable=None, **kwargs):
         response = client.get(url, **kwargs)
         if response.status_code == 429:
             raise TooManyRequestsError(url)
-        elif is_redirect(response):
-            return get_with_retry(response.headers["Location"], identity=identity, identity_callable=identity_callable,
-                                  **kwargs)
+        if is_redirect(response):
+            return get_with_retry(
+                response.headers["Location"],
+                identity=identity,
+                identity_callable=identity_callable,
+                **kwargs
+            )
         return response
 
 
@@ -210,10 +248,14 @@ async def get_with_retry_async(url, identity=None, identity_callable=None, **kwa
     Sends an asynchronous GET request with retry functionality and identity handling.
 
     Args:
-        url (str): The URL to send the GET request to.
-        identity (str, optional): The identity to use for the request. Defaults to None.
-        identity_callable (callable, optional): A callable that returns the identity. Defaults to None.
-        **kwargs: Additional keyword arguments to pass to the underlying httpx.AsyncClient.get() method.
+        url (str):
+            The URL to send the GET request to.
+        identity (str, optional):
+            The identity to use for the request. Defaults to None.
+        identity_callable (callable, optional):
+            A callable that returns the identity. Defaults to None.
+        **kwargs:
+            Additional keyword arguments to pass to the underlying httpx.AsyncClient.get() method.
 
     Returns:
         httpx.Response: The response object returned by the GET request.
@@ -225,7 +267,7 @@ async def get_with_retry_async(url, identity=None, identity_callable=None, **kwa
         response = await client.get(url, **kwargs)
         if response.status_code == 429:
             raise TooManyRequestsError(url)
-        elif is_redirect(response):
+        if is_redirect(response):
             return await get_with_retry_async(response.headers["Location"], identity=identity,
                                               identity_callable=identity_callable, **kwargs)
         return response
@@ -239,10 +281,14 @@ def stream_with_retry(url, identity=None, identity_callable=None, **kwargs):
     Sends a streaming GET request with retry functionality and identity handling.
 
     Args:
-        url (str): The URL to send the streaming GET request to.
-        identity (str, optional): The identity to use for the request. Defaults to None.
-        identity_callable (callable, optional): A callable that returns the identity. Defaults to None.
-        **kwargs: Additional keyword arguments to pass to the underlying httpx.Client.stream() method.
+        url (str):
+            The URL to send the streaming GET request to.
+        identity (str, optional):
+            The identity to use for the request. Defaults to None.
+        identity_callable (callable, optional):
+            A callable that returns the identity. Defaults to None.
+        **kwargs:
+            Additional keyword arguments to pass to the underlying httpx.Client.stream() method.
 
     Yields:
         bytes: The bytes of the response content.
@@ -254,7 +300,7 @@ def stream_with_retry(url, identity=None, identity_callable=None, **kwargs):
         with client.stream("GET", url, **kwargs) as response:
             if response.status_code == 429:
                 raise TooManyRequestsError(url)
-            elif is_redirect(response):
+            if is_redirect(response):
                 yield stream_with_retry(response.headers["Location"],
                                         identity=identity,
                                         identity_callable=identity_callable, **kwargs)
@@ -265,18 +311,24 @@ def stream_with_retry(url, identity=None, identity_callable=None, **kwargs):
 @retry(on=httpx.RequestError, attempts=attempts, timeout=retry_timeout, wait_initial=wait_initial)
 @with_identity
 @throttle_requests(requests_per_second=max_requests_per_second)
-def post_with_retry(url, data=None, json=None, identity=None, identity_callable=None,
+def post_with_retry(url, data=None, as_json=None, identity=None, identity_callable=None,
                     **kwargs):
     """
     Sends a POST request with retry functionality and identity handling.
 
     Args:
-        url (str): The URL to send the POST request to.
-        data (dict, optional): The data to include in the request body. Defaults to None.
-        json (dict, optional): The JSON data to include in the request body. Defaults to None.
-        identity (str, optional): The identity to use for the request. Defaults to None.
-        identity_callable (callable, optional): A callable that returns the identity. Defaults to None.
-        **kwargs: Additional keyword arguments to pass to the underlying httpx.Client.post() method.
+        url (str):
+            The URL to send the POST request to.
+        data (dict, optional):
+            The data to include in the request body. Defaults to None.
+        as_json (dict, optional):
+            The JSON data to include in the request body. Defaults to None.
+        identity (str, optional):
+            The identity to use for the request. Defaults to None.
+        identity_callable (callable, optional):
+            A callable that returns the identity. Defaults to None.
+        **kwargs:
+            Additional keyword arguments to pass to the underlying httpx.Client.post() method.
 
     Returns:
         httpx.Response: The response object returned by the POST request.
@@ -288,9 +340,15 @@ def post_with_retry(url, data=None, json=None, identity=None, identity_callable=
         response = client.post(url, data=data, json=json, **kwargs)
         if response.status_code == 429:
             raise TooManyRequestsError(url)
-        elif is_redirect(response):
-            return post_with_retry(response.headers["Location"], data=data, json=json, identity=identity,
-                                   identity_callable=identity_callable, **kwargs)
+        if is_redirect(response):
+            return post_with_retry(
+                response.headers["Location"],
+                data=data,
+                as_json=as_json,
+                identity=identity,
+                identity_callable=identity_callable,
+                **kwargs
+            )
         return response
 
 
@@ -299,19 +357,25 @@ def post_with_retry(url, data=None, json=None, identity=None, identity_callable=
 @throttle_requests(requests_per_second=max_requests_per_second)
 async def post_with_retry_async(url,
                                 data=None,
-                                json=None,
+                                as_json=None,
                                 identity=None,
                                 identity_callable=None, **kwargs):
     """
     Sends an asynchronous POST request with retry functionality and identity handling.
 
     Args:
-        url (str): The URL to send the POST request to.
-        data (dict, optional): The data to include in the request body. Defaults to None.
-        json (dict, optional): The JSON data to include in the request body. Defaults to None.
-        identity (str, optional): The identity to use for the request. Defaults to None.
-        identity_callable (callable, optional): A callable that returns the identity. Defaults to None.
-        **kwargs: Additional keyword arguments to pass to the underlying httpx.AsyncClient.post() method.
+        url (str):
+            The URL to send the POST request to.
+        data (dict, optional):
+            The data to include in the request body. Defaults to None.
+        as_json (dict, optional):
+            The JSON data to include in the request body. Defaults to None.
+        identity (str, optional):
+            The identity to use for the request. Defaults to None.
+        identity_callable (callable, optional):
+            A callable that returns the identity. Defaults to None.
+        **kwargs:
+            Additional keyword arguments to pass to the underlying httpx.AsyncClient.post() method.
 
     Returns:
         httpx.Response: The response object returned by the POST request.
@@ -320,12 +384,18 @@ async def post_with_retry_async(url,
         TooManyRequestsError: If the response status code is 429 (Too Many Requests).
     """
     async with httpx.AsyncClient(timeout=http_timeout) as client:
-        response = await client.post(url, data=data, json=json, **kwargs)
+        response = await client.post(url, data=data, as_json=as_json, **kwargs)
         if response.status_code == 429:
             raise TooManyRequestsError(url)
-        elif is_redirect(response):
-            return await post_with_retry_async(response.headers["Location"], data=data, json=json, identity=identity,
-                                               identity_callable=identity_callable, **kwargs)
+        if is_redirect(response):
+            return await post_with_retry_async(
+                response.headers["Location"],
+                data=data,
+                as_json=as_json,
+                identity=identity,
+                identity_callable=identity_callable,
+                **kwargs
+            )
         return response
 
 
@@ -342,20 +412,23 @@ def decode_content(content: bytes) -> str:
     Decode the content of a file.
     """
     try:
-        return content.decode('utf-8')
+        return content.decode("utf-8")
     except UnicodeDecodeError:
-        return content.decode('latin-1')
+        return content.decode("latin-1")
 
 
-def save_or_return_content(content: Union[str, bytes], path: Optional[Union[str, Path]]) -> Union[
-    str, bytes, None]:
+def save_or_return_content(content: Union[str, bytes], path: Optional[Union[str, Path]]
+                           ) -> Union[str, bytes, None]:
     """
     Save the content to a specified path or return the content.
 
     Args:
-        content (str or bytes): The content to save or return.
-        path (str or Path, optional): The path where the content should be saved. If None, return the content.
-        as_text (bool): Whether the content is text or binary.
+        content (str or bytes):
+            The content to save or return.
+        path (str or Path, optional):
+            The path where the content should be saved. If None, return the content.
+        as_text (bool):
+            Whether the content is text or binary.
 
     Returns:
         str or bytes or None: The content if not saved, or None if saved.
@@ -365,7 +438,7 @@ def save_or_return_content(content: Union[str, bytes], path: Optional[Union[str,
 
         # Determine if the path is a directory or a file
         if path.is_dir():
-            file_name = "downloaded_file"  # Replace with logic to extract file name from URL if available
+            file_name = "downloaded_file"
             file_path = path / file_name
         else:
             file_path = path
@@ -374,14 +447,15 @@ def save_or_return_content(content: Union[str, bytes], path: Optional[Union[str,
         if isinstance(content, bytes):
             file_path.write_bytes(content)
         else:
-            file_path.write_text(content)
+            file_path.write_text(content, encoding="utf-8")
 
         return None
 
     return content
 
 
-def download_file(url: str, as_text: bool = None, path: Optional[Union[str, Path]] = None) -> Union[str, bytes, None]:
+def download_file(url: str, as_text: bool = None, path: Optional[Union[str, Path]] = None
+                  ) -> Union[str, bytes, None]:
     """
     Download a file from a URL.
 
@@ -408,7 +482,7 @@ def download_file(url: str, as_text: bool = None, path: Optional[Union[str, Path
     # Check if the content is gzip-compressed
     if url.endswith("gz"):
         binary_file = BytesIO(response.content)
-        with gzip.open(binary_file, 'rb') as f:
+        with gzip.open(binary_file, "rb") as f:
             file_content = f.read()
             if as_text:
                 file_content = decode_content(file_content)
@@ -425,8 +499,9 @@ def download_file(url: str, as_text: bool = None, path: Optional[Union[str, Path
     return save_or_return_content(file_content, path)
 
 
-async def download_file_async(url: str, as_text: bool = None, path: Optional[Union[str, Path]] = None) -> Union[
-    str, bytes, None]:
+async def download_file_async(
+        url: str, as_text: bool = None, path: Optional[Union[str, Path]] = None
+) -> Union[str, bytes, None]:
     """
     Download a file from a URL asynchronously.
 
@@ -449,13 +524,13 @@ async def download_file_async(url: str, as_text: bool = None, path: Optional[Uni
     if as_text:
         # Download as text
         return response.text
-    else:
-        # Download as binary
-        content = response.content
 
-        # Check if the content is gzip-compressed
-        if response.headers.get("Content-Encoding") == "gzip":
-            content = gzip.decompress(content)
+    # Download as binary
+    content = response.content
+
+    # Check if the content is gzip-compressed
+    if response.headers.get("Content-Encoding") == "gzip":
+        content = gzip.decompress(content)
 
     if path and path.is_dir():
         path = path / os.path.basename(url)
@@ -469,8 +544,9 @@ CHUNK_SIZE = 4 * 1024 * 1024  # 4MB
 @retry(on=httpx.RequestError, attempts=attempts, timeout=retry_timeout, wait_initial=wait_initial)
 @with_identity
 @throttle_requests(requests_per_second=max_requests_per_second)
-async def stream_file(url: str, as_text: bool = None, path: Optional[Union[str, Path]] = None, **kwargs) -> Union[
-    str, bytes, None]:
+async def stream_file(
+        url: str, as_text: bool = None, path: Optional[Union[str, Path]] = None, **kwargs
+) -> Union[str, bytes, None]:
     """
     Download a file from a URL asynchronously with progress bar using httpx.
 
@@ -487,37 +563,38 @@ async def stream_file(url: str, as_text: bool = None, path: Optional[Union[str, 
         # Set the default based on the file extension
         as_text = url.endswith(text_extensions)
 
-    async with httpx.AsyncClient(timeout=http_timeout, headers=kwargs['headers']) as client:
-        async with client.stream('GET', url) as response:
+    async with httpx.AsyncClient(timeout=http_timeout, headers=kwargs["headers"]) as client:
+        async with client.stream("GET", url) as response:
             inspect_response(response)
-            total_size = int(response.headers.get('Content-Length', 0))
+            total_size = int(response.headers.get("Content-Length", 0))
 
             if as_text:
                 # Download as text
                 content = await response.text()
                 return content
-            else:
-                # Download as binary
-                content = b''
-                progress_bar = tqdm(
-                    total=total_size / (1024 * 1024),  # Convert to MB
-                    unit='MB',
-                    unit_scale=True,
-                    unit_divisor=1024,
-                    bar_format='{l_bar}{bar}| {n:.2f}/{total:.2f}MB [{elapsed}<{remaining}, {rate_fmt}]',
-                    desc=f"Downloading {os.path.basename(url)}",
-                    ascii=False  # Use Unicode characters for a nicer looking bar
-                )
-                downloaded = 0
-                async for chunk in response.aiter_bytes(chunk_size=CHUNK_SIZE):
-                    content += chunk
-                    downloaded += len(chunk)
-                    progress_bar.update(len(chunk) / (1024 * 1024))  # Update in MB
-                progress_bar.close()
 
-                # Check if the content is gzip-compressed
-                if response.headers.get("Content-Encoding") == "gzip":
-                    content = gzip.decompress(content)
+            # Download as binary
+            content = b""
+            progress_bar = tqdm(
+                total=total_size / (1024 * 1024),  # Convert to MB
+                unit="MB",
+                unit_scale=True,
+                unit_divisor=1024,
+                bar_format="{l_bar}{bar}| {n:.2f}/{total:.2f}MB [{elapsed}<{remaining}, "
+                           "{rate_fmt}]",
+                desc=f"Downloading {os.path.basename(url)}",
+                ascii=False  # Use Unicode characters for a nicer looking bar
+            )
+            downloaded = 0
+            async for chunk in response.aiter_bytes(chunk_size=CHUNK_SIZE):
+                content += chunk
+                downloaded += len(chunk)
+                progress_bar.update(len(chunk) / (1024 * 1024))  # Update in MB
+            progress_bar.close()
+
+            # Check if the content is gzip-compressed
+            if response.headers.get("Content-Encoding") == "gzip":
+                content = gzip.decompress(content)
 
             if path:
                 if isinstance(path, str):
@@ -543,6 +620,9 @@ def download_json(data_url: str) -> dict:
 
 
 def download_text(url: str) -> Optional[str]:
+    """
+    Download the raw text given under the URL
+    """
     return download_file(url, as_text=True)
 
 
@@ -569,8 +649,8 @@ def download_text_between_tags(url: str, tag: str):
     :param tag: The tag to extract the content from
 
     """
-    tag_start = f'<{tag}>'
-    tag_end = f'</{tag}>'
+    tag_start = f"<{tag}>"
+    tag_end = f"</{tag}>"
     is_header = False
     content = ""
 
@@ -583,12 +663,12 @@ def download_text_between_tags(url: str, tag: str):
                     continue  # Skip the current line as it's the opening tag
 
                 # If line matches header_end, stop capturing
-                elif line.startswith(tag_end):
+                if line.startswith(tag_end):
                     break
 
                 # If within header lines, add to header_content
-                elif is_header:
-                    content += line + '\n'  # Add a newline to preserve original line breaks
+                if is_header:
+                    content += line + "\n"  # Add a newline to preserve original line breaks
     return content
 
 
@@ -598,7 +678,7 @@ async def download_bulk_data(data_url: str) -> Path:
     e.g. "https://www.sec.gov/Archives/edgar/daily-index/xbrl/companyfacts.zip"
     """
     filename = os.path.basename(data_url)
-    local_dir = filename.split('.')[0]
+    local_dir = filename.split(".")[0]
     download_path = edgar_data_dir / local_dir
     download_filename = download_path / filename
 
@@ -610,7 +690,7 @@ async def download_bulk_data(data_url: str) -> Path:
         # Now stream the file to the data directory
         await stream_file(data_url, path=download_path)
         # Unzip the file to the data directory / file
-        with zipfile.ZipFile(download_filename, 'r') as z:
+        with zipfile.ZipFile(download_filename, "r") as z:
             z.extractall(download_path)
         # Delete the zip file
         download_filename.unlink()
