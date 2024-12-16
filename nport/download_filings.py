@@ -1,5 +1,5 @@
 import itertools
-from typing import Optional, Union
+from typing import Optional, Union, Iterable
 from datetime import datetime
 import logging
 from rich.logging import RichHandler
@@ -68,9 +68,11 @@ def read_index_table(index_text: str, index: str) -> pd.DataFrame:
     else:
         index_specs = form_specs if index.lower() == "form" else company_specs
         for line in data_lines:
-            data.append({spec[0]: spec[2](line[spec[1][0]:spec[1][1]]) for spec in index_specs})
+            data.append({spec[0]: spec[2](line[spec[1][0]:spec[1][1]].strip()) for spec in index_specs})
     data_df = pd.DataFrame(data)
     data_df["filing_date"] = pd.to_datetime(data_df["filing_date"], format="%Y-%m-%d")
+    data_df["accession_number"] = data_df["accession_number"].str.rsplit("/", expand=False).str[-1]
+    data_df["accession_number"] = data_df["accession_number"].str.slice(0, -4)
     return data_df
 
 
@@ -96,13 +98,12 @@ def get_filings_for_quarters(years_and_quarters: list[tuple[int, int]], index: s
     """
     Fetch the filings for all year, quarter combinations
     """
-    filings = None
+    filings = []
     for year, quarter in years_and_quarters:
         filings_quarter = fetch_filing_index(year, quarter, index)
-        if filings_quarter and filings:
-            filings = pd.concat([filings])
-        elif filings_quarter:
-            filings = filings_quarter
+        if filings_quarter is not None:
+            filings.append(filings_quarter)
+    filings = pd.concat(filings)
     return filings
 
 
@@ -112,25 +113,32 @@ def get_filings(
         form: Optional[Union[str, list[str]]] = None,
         filing_date: Optional[str] = None,
         index="form"
-) -> list | None:
+) -> pd.DataFrame:
     """
+    Downloads the filing index from Edgar and filters by year, quarter, filing_date or form.
 
     Args:
-        year:
-        quarter:
-        form:
-        filing_date:
-        index:
+        year (int or Iterable, optional):
+            The year or list of years of the filings, e.g. 2024.
+        quarter (int or Iterable, optional):
+            The quarter or list of quarters of the filing, e.g. 4 for the forth quarter.
+        form (str or Iterable, optional):
+            The form or forms of the filing, e.g. "NPORT-P" or ["NPORT-P", "10-K"].
+        filing_date (str, optional):
+            The filing date to filter by given as single day (YYYY-MM-DD) or a range
+            of days (YYYY-MM-DD:YYYY-MM-DD).
+        index (str, optional):
+            The index type - "form" or "company" or "xbrl". Defaults to "form".
 
     Returns:
-
+        pd.DataFrame: Dataframe of the queried filings
     """
     if filing_date:
         if not is_valid_filing_date(filing_date):
             logging.warning(
                 "Provide a valid filing date in the format YYYY-MM-DD or YYYY-MM-DD:YYYY-MM-DD"
             )
-            return None
+            return pd.DataFrame([])
         year_and_quarters = filing_date_to_year_quarters(filing_date)
     elif not year:
         year, quarter = current_year_and_quarter()
@@ -154,11 +162,13 @@ the SEC has filings.
 
 (You specified the year {year} and quarter {quarter})
         """)
-        return None
+        return pd.DataFrame([])
     filings = get_filings_for_quarters(year_and_quarters, index=index)
 
-    if form:
+    if isinstance(form, str):
         filings = filings.loc[filings["form"] == form.upper()]
+    elif isinstance(form, Iterable):
+        filings = filings.loc[filings["form"].isin(form)]
 
     if filing_date:
         start_date, end_date = split_filing_date(filing_date)
@@ -166,4 +176,6 @@ the SEC has filings.
             (filings["filing_date"] >= start_date) & (filings["filing_date"] <= end_date)
             ]
 
+    filings["url"] = ("https://www.sec.gov/Archives/edgar/data/" + filings["cik"].astype(str) + "/"
+                      + filings["accession_number"] + ".txt")
     return filings
