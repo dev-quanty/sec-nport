@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE instance-profile
+        SYSTEM "https://resources.jetbrains.com/writerside/1.0/product-profile.dtd">
+
+<instance-profile id="nport-doc"
+                 name="sec-nport"
+                 start-page="User-Guide.md">
+
+    <toc-element topic="User-Guide.md"/>
+    <toc-element topic="Version-History.md"/>
+    <toc-element topic="SEC-Filings.md">
+        <toc-element topic="N-MFP.md"/>
+        <toc-element topic="NPORT-P.md"/>
+        <toc-element topic="N-Q.md"/>
+        <toc-element topic="Abbreviations.md"/>
+    </toc-element>
+    <toc-element topic="Frequently-Asked-Questions.md"/>
+</instance-profile>
