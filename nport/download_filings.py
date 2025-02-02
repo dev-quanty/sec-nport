@@ -18,16 +18,16 @@ index_url = "https://www.sec.gov/Archives/edgar/full-index/{}/QTR{}/{}.{}"
 form_specs: list[tuple] = [
     ("form", (0, 12), str),
     ("company", (12, 74), str),
-    ("cik", (74, 82), int),
-    ("filing_date", (85, 97), str),
-    ("accession_number", (97, 141), str)
+    ("cik", (79, 88), int),
+    ("filing_date", (88, 102), str),
+    ("accession_number", (102, 156), str)
 ]
 company_specs: list[tuple] = [
     ("company", (0, 62), str),
-    ("form", (62, 74), str),
-    ("cik", (74, 82), int),
-    ("filing_date", (85, 97), str),
-    ("accession_number", (97, 141), str)
+    ("form", (62, 79), str),
+    ("cik", (79, 88), int),
+    ("filing_date", (88, 102), str),
+    ("accession_number", (102, 141), str)
 ]
 xbrl_specs: list[tuple] = [
     ("cik", 0, int),
