@@ -6,3 +6,16 @@
 ---
 
 # SEC-NPORT
+This python package can be used to download SEC filings from the EDGAR database and analyze their contents.
+The focus lies on reports from financial corporations.
+Currently only N-PORT filings are supported.
+
+## Installation
+Install it using pip:
+> pip install sec-nport
+
+Afterwards it can be imported using
+> import nport
+
+## Documentation
+The documentation can be found under: https://dev-quanty.github.io/sec-nport/

@@ -2,7 +2,7 @@ name: Build documentation
 
 on:
   push:
-    branches: ["main", "finalize-first-production-version"]
+    branches: ["main"]
   workflow_dispatch:
 
 permissions:
