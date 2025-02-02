@@ -11,7 +11,7 @@ permissions:
   pages: write
 
 env:
-  INSTANCE: 'docs/Writerside/nport-doc'
+  INSTANCE: 'Writerside/nport-doc'
   DOCKER_VERSION: '243.22562'
 
 jobs:
